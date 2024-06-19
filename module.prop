@@ -1,0 +1,7 @@
+id=irqbalance
+name=IRQ Balancer Configuration+
+version=Universal
+versionCode=1
+author=@LeanHijosdesusMadres - @EmanuelCN0
+description=This module modifies the msm_irqbalance.conf file and will set kgsl and msm_drm to different irqs to improve performance and latency.
+support=https://t.me/modulostk
