@@ -1,5 +1,5 @@
 # Palabras clave a buscar en /proc/interrupts
-keywords=("arch_timer" "arm-pmu" "arch_mem_timer" "kgsl-3d0*" "msm_drm")
+keywords=("arch_timer" "arm-pmu" "arch_mem_timer" "kgsl*" "msm_drm")
 
 # Leer el contenido de /proc/interrupts
 interrupt_lines=$(cat /proc/interrupts)
@@ -27,7 +27,7 @@ IGNORED_IRQ=$interrupt_numbers"
 echo "$new_config" > "/data/adb/modules_update/irqbalance/system/vendor/etc/msm_irqbalance.conf"
 
 # Palabras clave a buscar en /proc/interrupts
-keywords=("kgsl-3d0*" "msm_drm")
+keywords=("kgsl*" "msm_drm")
 
 # Leer el contenido de /proc/interrupts
 interrupt_lines=$(cat /proc/interrupts)
@@ -38,7 +38,7 @@ msm_drm_irq=""
 for keyword in "${keywords[@]}"; do
     line=$(echo "$interrupt_lines" | grep -E "$keyword")
     if [ -n "$line" ]; then
-        if [ "$keyword" = "kgsl-3d0*" ]; then
+        if [ "$keyword" = "kgsl*" ]; then
             kgsl_irq=$(echo "$line" | awk '{print $1}' | tr -d ':')
         elif [ "$keyword" = "msm_drm" ]; then
             msm_drm_irq=$(echo "$line" | awk '{print $1}' | tr -d ':')
