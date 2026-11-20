@@ -1,7 +1,10 @@
 id=irqbalance
-name=IRQ Balancer Configuration+
-version=Universal
-versionCode=1
-author=@LeanHijosdesusMadres - @EmanuelCN0
-description=This module modifies the msm_irqbalance.conf file and will set kgsl and msm_drm to different irqs to improve performance and latency.
+name=IRQ Kernel Sync
+version=v5
+versionCode=5
+author=@LeanHijosdesusMadres
+description=Syncs kernel IRQ IDs into msm_irqbalance.conf (necessary when changing kernel) and lets you edit from a WebUI.
 support=https://t.me/modulostk
+banner=leanbanner.jpg
+actionIcon=lean.jpg
+donate=https://www.paypal.me/LeanHijosdesusMadres
