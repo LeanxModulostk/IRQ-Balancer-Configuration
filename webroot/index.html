@@ -1,1 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IRQ Kernel Sync</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--text:#1b1d21;--muted:#6b7280;--accent:#2563eb;--on:#16a34a;--off:#e5e7eb;--border:#e2e5ea}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#e8eaee;--muted:#9097a3;--accent:#5b8cff;--on:#22c55e;--off:#2a2f38;--border:#272c35}}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--bg);color:var(--text);font:15px/1.45 system-ui,sans-serif}
+h1{font-size:20px;margin:0}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.lang{border:1px solid var(--border);background:var(--card);border-radius:10px;padding:6px 8px;cursor:pointer;line-height:0}
+.lang{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+.lang.support{line-height:normal;padding:8px 14px;font:inherit;font-weight:600;color:var(--accent)}
+.lang svg{width:28px;height:auto;border-radius:3px;display:block}
+.sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px}
+code{font:12.5px ui-monospace,monospace;word-break:break-all}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.chip{border:0;border-radius:10px;padding:10px 0;background:var(--off);color:var(--text);font:inherit;cursor:pointer}
+.chip b{display:block;font-size:18px}
+.chip small{color:var(--muted)}
+.chip.on{background:var(--on);color:#fff}.chip.on small{color:#e9ffe9}
+input[type=text]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:14px ui-monospace,monospace}
+button.btn{flex:1;min-width:120px;border:0;border-radius:10px;padding:11px 12px;font:inherit;font-weight:600;background:var(--accent);color:#fff;cursor:pointer}
+button.btn.sec{background:var(--off);color:var(--text)}
+button:disabled{opacity:.5}
+.desc{margin:0 0 10px;font-size:14px;color:var(--muted)}
+#desc{white-space:pre-line;margin:12px 0 0}
+details.card summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;list-style:none;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);-webkit-user-select:none;user-select:none}
+details.card summary::-webkit-details-marker{display:none}
+details.card summary::after{content:"▸";font-size:16px;transition:transform .15s}
+details.card[open] summary::after{transform:rotate(90deg)}
+.warn{color:#d97706;font-size:13px;margin-top:6px;min-height:1em}
+#toast{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%}
+#toast.show{opacity:.95}
+.tab[hidden]{display:none}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;border:0;background:none;color:var(--muted);padding:14px 0;font:inherit;font-weight:600;cursor:pointer}
+nav button.act{color:var(--accent);box-shadow:inset 0 2px 0 var(--accent)}
+.verdict{font-size:17px;font-weight:700;margin:0 0 4px}
+.verdict.ok{color:var(--on)}.verdict.bad{color:#dc2626}
+.ck{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px}
+.ck:last-child{border-bottom:0}
+.ck i{font-style:normal;font-weight:700;min-width:1.2em}
+.ck.ok i{color:var(--on)}.ck.bad i{color:#dc2626}
+.core{display:grid;grid-template-columns:3.6em 5.6em 1fr 3em;gap:8px;align-items:center;padding:4px 0;font-size:14px}
+.core .tag{font-size:12px;color:var(--muted)}.core .tag.ok{color:var(--on)}
+.core .bar{height:8px;border-radius:4px;background:var(--off);overflow:hidden}
+.core .bar b{display:block;height:100%;background:var(--accent)}
+.core .n{text-align:right;font-variant-numeric:tabular-nums}
+.ck small{display:block;color:var(--muted);word-break:break-all}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>IRQ Kernel Sync</h1>
+  <button class="lang" id="langbtn" type="button"></button>
+  <button class="lang support" id="supportbtn" type="button" hidden></button>
+</div>
 
+<div id="tab_settings" class="tab">
+
+<details class="card" id="desc_card">
+  <summary id="t_desc"></summary>
+  <p class="desc" id="desc"></p>
+</details>
+
+<div class="card">
+  <h2>PRIO</h2>
+  <div class="chips" id="chips"></div>
+  <input type="text" id="raw" inputmode="numeric" autocomplete="off" spellcheck="false">
+  <div class="warn" id="warn"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="btn" id="saveapply"></button>
+    <button class="btn sec" id="reset"></button>
+  </div>
+</div>
+
+<div class="card">
+  <h2 id="t_gpu"></h2>
+  <p class="desc" id="gpu_desc"></p>
+  <p class="desc" id="gpu_state" style="margin:0 0 10px"></p>
+  <div class="row">
+    <button class="btn" id="gpu_btn"></button>
+  </div>
+</div>
+
+<div class="card">
+  <h2 id="t_files"></h2>
+  <div id="targets"></div>
+</div>
+
+</div>
+
+<div id="tab_status" class="tab" hidden>
+  <div class="card">
+    <h2 id="t_result"></h2>
+    <p class="verdict" id="verdict"></p>
+    <p class="desc" id="verdict_hint" style="margin:0 0 10px"></p>
+    <button class="btn" id="recheck" style="width:100%"></button>
+  </div>
+  <div class="card">
+    <h2 id="t_checks"></h2>
+    <div id="checks"></div>
+  </div>
+  <div class="card">
+    <h2 id="t_aff"></h2>
+    <p class="desc" id="aff_note" style="margin:0 0 8px"></p>
+    <div id="aff"></div>
+    <p class="desc" id="aff_hint" style="margin:8px 0 0"></p>
+  </div>
+</div>
+
+<nav>
+  <button id="nav_settings"></button>
+  <button id="nav_status"></button>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+const MODDIR = "/data/adb/modules/irqbalance";
+const SH = MODDIR + "/common/irq_sync.sh";
+const DEFAULT_PRIO = "1,1,1,1,0,0,0,0";
+const LANGS = { es: {
+ t_gpu:"Ajuste: IRQ's de GPU y pantalla", gpu_desc:"Añade las IRQs de kgsl (GPU) y msm_drm (pantalla) a IGNORED_IRQ, para que msm_irqbalance no las mueva de núcleo: se quedan donde las dejó el kernel. Otras ROMs lo hacen para mejorar la latencia. Revertir las quita de la lista. Al pulsar, el cambio se aplica reiniciando el servicio.", gpu_add:"Añadir a IGNORED_IRQ", gpu_rev:"Revertir", st_state:"Estado", st_on:"Activo", st_off:"Inactivo", st_irqs:"IRQs detectadas", st_none:"no se encontraron", gpu_added:"Añadido y aplicado", gpu_reverted:"Revertido y aplicado", gpu_noirq:"No se encontraron IRQs de kgsl/msm_drm",
+ nav_settings:"Ajustes", nav_status:"Estado", t_result:"Resultado", t_checks:"Comprobaciones", t_aff:"IRQs por afinidad", recheck:"Comprobar", idle:"Aún no se ha comprobado", idle_hint:"Pulsa Comprobar para ejecutar las comprobaciones.", checking:"Comprobando…", run_ok:"El módulo está funcionando", run_bad:"Hay un problema", ck_enabled:"Módulo activado", ck_service:"Servicio msm_irqbalance en ejecución", ck_mount:"Archivo montado igual al del módulo", ck_label:"Etiqueta SELinux correcta", aff_note:"Núcleos permitidos por PRIO", aff_hint:"Cuenta las IRQs fijadas a un solo núcleo; las que pueden ir a varios núcleos se muestran aparte. Algunas IRQs pueden seguir en núcleos prohibidos: el demonio no las mueve todas.", core_ok:"permitido", core_no:"prohibido", multi:"Varios núcleos", total:"Total de IRQs",
+  h_disabled:"El módulo está desactivado (existe el archivo disable o remove).", h_restarting:"El servicio se está cayendo y reiniciando. Revisa la etiqueta SELinux del archivo.", h_service:"El servicio msm_irqbalance no está en ejecución.", h_mount:"El archivo montado no coincide con el del módulo: tu metamodule no lo está montando.", h_label:"La etiqueta SELinux del archivo no es la esperada; el demonio puede no poder leerlo.",
+  support:"Soporte", title_desc:"Descripción", files:"Archivos reemplazados", save:"Guardar", saveapply:"Guardar y aplicar", applied:"Guardado y aplicado", reset:"Valores por defecto", saved:"Guardado. Falta aplicar",
+  desc:`PRIO: define la prioridad o disponibilidad de cada núcleo de la CPU para el balanceo de interrupciones (IRQs).
+
+¿Qué significan los valores?
+• 1: El núcleo está habilitado y puede recibir y procesar interrupciones de hardware.
+• 0: El núcleo está prohibido (significa que no se deben programar ni enviar interrupciones a ese CPU).
+
+- Ejemplo común
+• PRIO=1,1,1,1,0,0,0,0:
+ • Los primeros 4 núcleos (0,1,2,3) tienen valor 1 y sí gestionan interrupciones.
+ • Los últimos 4 núcleos (4,5,6,7) tienen valor 0 y no reciben interrupciones, liberándolos así de la sobrecarga del kernel para que se dediquen exclusivamente a tareas pesadas de procesamiento o juegos.
+
+- IGNORED_IRQ: Los IDs que aparecen acá ignoran la configuración de PRIO
+
+- Algunas IRQs pueden seguir en núcleos prohibidos: el demonio no las mueve todas.
+- Quizás para aplicar los cambios necesite reiniciar su dispositivo.`,
+  invalid:"Formato inválido: usa dígitos separados por comas (ej. 1,1,1,1,0,0,0,0)",
+  mismatch:(a,b)=>`Tu dispositivo tiene ${b} núcleos pero PRIO tiene ${a} valores`,
+  noprio:"No se encontró PRIO en el archivo", mismatch2:"El archivo no coincide con lo guardado",
+  noksu:"Abre esta WebUI desde KernelSU, WebUI X o KSUWebUIStandalone", err:"Error", core:"CPU"
+}, en: {
+ t_gpu:"Tweak: GPU & display IRQ's", gpu_desc:"Adds the kgsl (GPU) and msm_drm (display) IRQs to IGNORED_IRQ, so msm_irqbalance does not move them between cores: they stay where the kernel put them. Other ROMs do this to improve latency. Revert removes them from the list. The change is applied by restarting the service.", gpu_add:"Add to IGNORED_IRQ", gpu_rev:"Revert", st_state:"Status", st_on:"Active", st_off:"Inactive", st_irqs:"Detected IRQs", st_none:"none found", gpu_added:"Added and applied", gpu_reverted:"Reverted and applied", gpu_noirq:"No kgsl/msm_drm IRQs found",
+ nav_settings:"Settings", nav_status:"Status", t_result:"Result", t_checks:"Checks", t_aff:"IRQs by affinity", recheck:"Check", idle:"Not checked yet", idle_hint:"Tap Check to run the checks.", checking:"Checking…", run_ok:"The module is working", run_bad:"There is a problem", ck_enabled:"Module enabled", ck_service:"msm_irqbalance service running", ck_mount:"Mounted file equals the module's file", ck_label:"SELinux label correct", aff_note:"Cores allowed by PRIO", aff_hint:"Counts IRQs pinned to a single core; IRQs that can run on several cores are shown separately. Some IRQs may stay on banned cores: the daemon does not move all of them.", core_ok:"allowed", core_no:"banned", multi:"Several cores", total:"Total IRQs",
+  h_disabled:"The module is disabled (a disable or remove file exists).", h_restarting:"The service keeps crashing and restarting. Check the SELinux label of the file.", h_service:"The msm_irqbalance service is not running.", h_mount:"The mounted file differs from the module's: your metamodule is not mounting it.", h_label:"The file's SELinux label is not the expected one; the daemon may be unable to read it.",
+  support:"Support", title_desc:"Description", files:"Replaced files", save:"Save", saveapply:"Save & apply", applied:"Saved and applied", reset:"Defaults", saved:"Saved. Not applied yet",
+  desc:`PRIO: defines the priority or availability of each CPU core for interrupt (IRQ) balancing.
+
+What do the values mean?
+• 1: The core is enabled and can receive and process hardware interrupts.
+• 0: The core is banned (no interrupts should be scheduled or sent to that CPU).
+
+- Common example
+• PRIO=1,1,1,1,0,0,0,0:
+ • The first 4 cores (0,1,2,3) have value 1 and do handle interrupts.
+ • The last 4 cores (4,5,6,7) have value 0 and receive no interrupts, which frees them from kernel overhead so they can be dedicated exclusively to heavy processing tasks or games.
+
+- IGNORED_IRQ: The IDs listed here ignore the PRIO setting
+
+- Some IRQs may stay on banned cores: the daemon does not move all of them.
+- You may need to reboot your device for the changes to apply.`,
+  invalid:"Invalid format: use comma-separated digits (e.g. 1,1,1,1,0,0,0,0)",
+  mismatch:(a,b)=>`Device has ${b} cores but PRIO has ${a} values`,
+  noprio:"PRIO not found in the file", mismatch2:"File does not match what was saved",
+  noksu:"Open this WebUI from KernelSU, WebUI X or KSUWebUIStandalone", err:"Error", core:"CPU"
+}};
+let lang = "en";   // default language: English
+try{ const sv = localStorage.getItem("irq_lang"); if(sv==="es"||sv==="en") lang = sv; }catch(e){}
+let L = LANGS[lang];
+const $ = id => document.getElementById(id);
+let cpus = 8, lastPrio = "", loaded = false, lastCheck = null, lastGpu = null;
+
+function exec(cmd){
+  return new Promise(res=>{
+    const cb = "cb_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
+    window[cb] = (errno, stdout, stderr)=>{ delete window[cb]; res({errno, out:(stdout||"").trim(), err:(stderr||"").trim()}); };
+    try{ ksu.exec(cmd, "{}", cb); }catch(e){ delete window[cb]; res({errno:-1,out:"",err:String(e)}); }
+  });
+}
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2200); }
+const valid = v => /^[0-9](,[0-9])*$/.test(v);
+const getVals = () => $("raw").value.split(",").map(s=>s.trim());
+
+function render(){
+  const vals = getVals().filter(v=>v!=="");
+  const box = $("chips"); box.innerHTML="";
+  const n = Math.max(cpus, vals.length);
+  for(let i=0;i<n;i++){
+    const v = vals[i] ?? "0";
+    const b = document.createElement("button");
+    b.className = "chip"+(v!=="0"?" on":"");
+    b.innerHTML = `<small>${L.core}${i}</small><b>${v}</b>`;
+    b.onclick = ()=>{ const a=[...vals]; while(a.length<n)a.push("0"); a[i]=(a[i]==="0"?"1":"0"); $("raw").value=a.join(","); render(); };
+    box.appendChild(b);
+  }
+  $("warn").textContent = !valid($("raw").value) ? L.invalid : (vals.length!==cpus && cpus>0 ? L.mismatch(vals.length,cpus) : "");
+}
+
+async function load(){
+  const r = await exec(`sh ${SH} status`);
+  if(r.errno!==0 || r.out.startsWith("ERR")){ toast(L.err+": "+(r.out||r.err)); return null; }
+  const [head, rest=""] = r.out.split("CONF_BEGIN");
+  const conf = rest.split("CONF_END")[0];
+  const targets=[]; let cp=0;
+  let gOn=false, gIrqs="";
+  head.split("\n").forEach(l=>{ if(l.startsWith("TARGET=")) targets.push(l.slice(7)); else if(l.startsWith("CPUS=")) cp=parseInt(l.slice(5)); else if(l.startsWith("GPU_IRQ=")) gOn=l.slice(8)==="on"; else if(l.startsWith("GPU_IRQS=")) gIrqs=l.slice(9); });
+  renderGpu(gOn,gIrqs);
+  cpus = cp||8;
+  $("targets").innerHTML = targets.map(t=>`<div><code>${t.replace(/[<>&]/g,"")}</code></div>`).join("");
+  const m = conf.match(/^\s*PRIO\s*=\s*([0-9,\s]*)$/m);
+  if(!m){ toast(L.noprio); render(); return null; }
+  const prio = m[1].replace(/\s/g,"");
+  $("raw").value = prio; lastPrio = prio; loaded = true;
+  render();
+  return prio;
+}
+
+async function save(apply){
+  const v = $("raw").value.replace(/\s/g,"");
+  if(!valid(v)){ toast(L.invalid); return; }
+  $("raw").value = v;
+  const r = await exec(`sh ${SH} set_prio ${v}`);
+  if(r.errno!==0 || !r.out.includes("OK")){ toast(L.err+": "+(r.out||r.err)); return; }
+  const now = await load();          // vuelve a leer el archivo para confirmar
+  if(now===null) return;
+  if(now!==v){ toast(L.mismatch2); return; }
+  if(apply){
+    const a = await exec(`sh ${SH} apply`);
+    toast(a.out.startsWith("OK") ? L.applied : (a.out||L.err));
+  } else toast(L.saved);
+}
+
+function renderGpu(on, irqs){
+  lastGpu = [on, irqs];
+  $("gpu_state").textContent = `${L.st_state}: ${on?L.st_on:L.st_off} · ${L.st_irqs}: ${irqs?irqs.replace(/,/g,", "):L.st_none}`;
+  const b = $("gpu_btn");
+  b.textContent = on ? L.gpu_rev : L.gpu_add;     // shows the action it will perform
+  b.classList.toggle("sec", on);
+  b.disabled = !on && !irqs;                       // cannot add if no kgsl/msm_drm IRQs were found
+}
+
+let gpuBusy = false;
+async function gpuAction(on){
+  if(gpuBusy) return; gpuBusy = true; $("gpu_btn").disabled = true;
+  try{ await gpuRun(on); } finally{ gpuBusy = false; await load(); }
+}
+async function gpuRun(on){
+  let r = await exec(`sh ${SH} ${on?"gpu_on":"gpu_off"}`);
+  if(r.errno!==0 || r.out.includes("ERR")){ toast(on?L.gpu_noirq:(r.out||L.err)); return; }
+  r = await exec(`sh ${SH} apply`);
+  toast(r.out.startsWith("OK") ? (on?L.gpu_added:L.gpu_reverted) : (r.out||L.err));
+}
+
+const esc = t => String(t).replace(/[<>&]/g,"");
+function row(ok, text, detail){
+  return `<div class="ck ${ok?"ok":"bad"}"><i>${ok?"✔":"✖"}</i><div>${esc(text)}${detail?`<small>${esc(detail)}</small>`:""}</div></div>`;
+}
+async function runCheck(){
+  $("verdict").className = "verdict"; $("verdict").textContent = L.checking; $("verdict_hint").textContent = "";
+  const r = await exec(`sh ${SH} check`);
+  const d = {service:"none", pid:"", disabled:false, files:[], aff:[]};
+  r.out.split("\n").forEach(l=>{
+    if(l.startsWith("SERVICE=")) d.service=l.slice(8);
+    else if(l.startsWith("PID=")) d.pid=l.slice(4);
+    else if(l.startsWith("DISABLED=")) d.disabled=l.slice(9)==="1";
+    else if(l.startsWith("FILE|")){ const p=l.split("|"); d.files.push({real:p[1],mount:p[2],label:p[3],labok:p[4]==="1"}); }
+    else if(l.startsWith("AFF|")){ const p=l.split("|"); d.aff.push({a:p[1],c:p[2]}); }
+  });
+  lastCheck = d; renderCheck(d);
+}
+
+function renderCheck(d){
+  const svcOk = d.service==="running" && d.pid!=="";
+  const mountOk = d.files.length>0 && d.files.every(f=>f.mount==="ok");
+  const labelOk = d.files.length>0 && d.files.every(f=>f.labok);
+  let html = row(!d.disabled, L.ck_enabled, "")
+    + row(svcOk, L.ck_service, `${d.service}${d.pid?" · PID "+d.pid:""}`);
+  d.files.forEach(f=>{ html += row(f.mount==="ok", L.ck_mount, f.real+(f.mount==="ok"?"":" ("+f.mount+")")); });
+  d.files.forEach(f=>{ html += row(f.labok, L.ck_label, f.label||"?"); });
+  $("checks").innerHTML = html;
+  const all = !d.disabled && svcOk && mountOk && labelOk;
+  const hint = d.disabled ? L.h_disabled
+    : !svcOk ? (d.service==="restarting" ? L.h_restarting : L.h_service)
+    : !mountOk ? L.h_mount : !labelOk ? L.h_label : "";
+  $("verdict").className = "verdict "+(all?"ok":"bad");
+  $("verdict").textContent = all ? L.run_ok : L.run_bad;
+  $("verdict_hint").textContent = hint;
+  const allowed = lastPrio ? lastPrio.split(",").map((v,i)=>v!=="0"?"cpu"+i:null).filter(Boolean).join(", ") : "-";
+  $("aff_note").textContent = `${L.aff_note}: ${allowed||"-"}`;
+  $("aff").innerHTML = affRows(d.aff, cpus, lastPrio);
+  $("aff_hint").textContent = L.aff_hint;
+}
+function affRows(aff, ncpu, prio){
+  const pv = prio ? prio.split(",") : [];
+  const count = {}; let multi = 0, maxIdx = -1, total = 0;
+  aff.forEach(x=>{
+    const c = parseInt(x.c)||0; total += c;
+    if(/^[0-9]+$/.test(x.a)){ const i=parseInt(x.a); count[i]=(count[i]||0)+c; if(i>maxIdx) maxIdx=i; }
+    else multi += c;
+  });
+  const n = Math.max(ncpu, pv.length, maxIdx+1);
+  const max = Math.max(1, ...Object.values(count), multi);
+  let h = "";
+  for(let i=0;i<n;i++){
+    const c = count[i]||0;
+    const st = pv.length ? (pv[i] && pv[i]!=="0" ? `<span class="tag ok">${L.core_ok}</span>` : `<span class="tag">${L.core_no}</span>`) : "<span></span>";
+    h += `<div class="core"><span>cpu${i}</span>${st}<div class="bar"><b style="width:${Math.round(c*100/max)}%"></b></div><span class="n">${c}</span></div>`;
+  }
+  if(multi>0) h += `<div class="core"><span style="grid-column:1/3">${L.multi}</span><div class="bar"><b style="width:${Math.round(multi*100/max)}%"></b></div><span class="n">${multi}</span></div>`;
+  h += `<div class="desc" style="margin-top:6px">${L.total}: ${total}</div>`;
+  return h;
+}
+
+function showTab(t){
+  ["settings","status"].forEach(x=>{ $("tab_"+x).hidden = x!==t; $("nav_"+x).classList.toggle("act", x===t); });
+  $("langbtn").hidden = t==="status";      // Settings: language flag
+  $("supportbtn").hidden = t!=="status";   // Status: support button
+}
+
+function flagSvg(code){
+  if(code==="pe") return '<svg viewBox="0 0 3 2" xmlns="http://www.w3.org/2000/svg"><rect width="3" height="2" fill="#D91023"/><rect x="1" width="1" height="2" fill="#fff"/></svg>';
+  let b = "";
+  for(let k=0;k<6;k++) b += `<rect y="${(10/13*(2*k+1)).toFixed(3)}" width="19" height="${(10/13).toFixed(3)}" fill="#fff"/>`;
+  let st = "";
+  for(let r=0;r<4;r++) for(let c=0;c<5;c++) st += `<circle cx="${(0.8+c*1.45).toFixed(2)}" cy="${(0.75+r*1.2).toFixed(2)}" r="0.24" fill="#fff"/>`;
+  return `<svg viewBox="0 0 19 10" xmlns="http://www.w3.org/2000/svg"><rect width="19" height="10" fill="#B22234"/>${b}<rect width="7.6" height="${(70/13).toFixed(3)}" fill="#3C3B6E"/>${st}</svg>`;
+}
+
+function applyLang(){
+  document.documentElement.lang = lang;
+  // the button shows the flag of the language you would switch to
+  $("langbtn").innerHTML = flagSvg(lang==="en" ? "pe" : "us");
+  $("langbtn").title = lang==="en" ? "Español" : "English";
+  $("langbtn").setAttribute("aria-label", lang==="en" ? "Cambiar a español" : "Switch to English");
+  $("supportbtn").textContent = L.support;
+  $("nav_settings").textContent = L.nav_settings; $("nav_status").textContent = L.nav_status;
+  $("t_result").textContent = L.t_result; $("t_checks").textContent = L.t_checks; $("t_aff").textContent = L.t_aff; $("recheck").textContent = L.recheck;
+  $("t_gpu").textContent = L.t_gpu; $("gpu_desc").textContent = L.gpu_desc;
+  $("t_files").textContent = L.files; $("t_desc").textContent = L.title_desc; $("desc").textContent = L.desc;
+  $("saveapply").textContent = L.saveapply; $("reset").textContent = L.reset;
+  if(lastCheck) renderCheck(lastCheck);
+  else { $("verdict").className = "verdict"; $("verdict").textContent = L.idle; $("verdict_hint").textContent = L.idle_hint; }
+  if(lastGpu) renderGpu(lastGpu[0], lastGpu[1]); else $("gpu_btn").textContent = L.gpu_add;
+  if(loaded) render();
+}
+
+$("langbtn").onclick = ()=>{
+  if(lang==="en") toast("Perú es clave!");   // tapping the Peru flag shows the message
+  lang = lang==="en" ? "es" : "en"; L = LANGS[lang];
+  try{ localStorage.setItem("irq_lang", lang); }catch(e){}
+  applyLang();
+};
+
+const SUPPORT_URL = "https://t.me/modulostk";
+$("supportbtn").onclick = async ()=>{
+  const r = await exec(`am start --user 0 -a android.intent.action.VIEW -d ${SUPPORT_URL}`);
+  if(r.errno!==0) window.open(SUPPORT_URL, "_blank");
+};
+$("nav_settings").onclick = ()=>showTab("settings"); $("nav_status").onclick = ()=>showTab("status"); $("recheck").onclick = runCheck;
+$("gpu_btn").onclick = ()=>gpuAction(!(lastGpu && lastGpu[0]));   // toggles to the other option
+$("raw").addEventListener("input", render);
+$("saveapply").onclick = ()=>save(true);
+$("reset").onclick = ()=>{ $("raw").value = DEFAULT_PRIO; render(); };
+
+applyLang();
+$("nav_settings").classList.add("act");
+if(typeof ksu==="undefined") toast(L.noksu); else load();
+</script>
+</body>
+</html>
